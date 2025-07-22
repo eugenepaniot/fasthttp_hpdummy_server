@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -10,6 +9,8 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+
+	json "github.com/bytedance/sonic"
 
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/reuseport"
@@ -26,7 +27,7 @@ type requestJSON struct {
 var quiet bool
 
 func main() {
-	flag.BoolVar(&quiet, "quiet", false, "quiet")
+	flag.BoolVar(&quiet, "quiet", true, "quiet")
 	addr := flag.String("addr", "0.0.0.0:8080", "server listen address")
 	flag.Parse()
 
@@ -39,17 +40,16 @@ func main() {
 
 	// Create a new fasthttp server
 	server := &fasthttp.Server{
-		TCPKeepalive:    true,
-		LogAllErrors:    true,
-		ReadBufferSize:  1024 * 1024,
-		WriteBufferSize: 1024 * 1024,
-		ReadTimeout:     90 * time.Second,
-		WriteTimeout:    5 * time.Second,
-		Handler:         requestHandler,
+		TCPKeepalive: true,
+		LogAllErrors: true,
+		ReadTimeout:  90 * time.Second,
+		WriteTimeout: 5 * time.Second,
+		Handler:      requestHandler,
 	}
 
 	// Start the server in a goroutine
 	go func() {
+		log.Printf("starting server on %s", *addr)
 		if err := server.Serve(ln); err != nil {
 			log.Fatalf("error starting server: %v", err)
 		}
@@ -61,7 +61,9 @@ func main() {
 	<-sig
 
 	// Stop the server
-	server.Shutdown()
+	if err := server.Shutdown(); err != nil {
+		log.Fatalf("error stopping server: %v", err)
+	}
 }
 
 func requestToJSON(req *fasthttp.Request) ([]byte, error) {
@@ -69,9 +71,9 @@ func requestToJSON(req *fasthttp.Request) ([]byte, error) {
 	uri := b2s(req.URI().FullURI())
 	method := b2s(req.Header.Method())
 	headers := make(map[string]string)
-	req.Header.VisitAll(func(k, v []byte) {
-		headers[string(k)] = string(v)
-	})
+	for k, v := range req.Header.All() {
+		headers[b2s(k)] = b2s(v)
+	}
 	contentType := string(req.Header.ContentType())
 	body := string(req.Body())
 
@@ -97,7 +99,9 @@ func requestHandler(ctx *fasthttp.RequestCtx) {
 	ctx.Response.Header.SetContentLength(len(jsonData))
 	// ctx.Response.Header.Set("Connection", "keep-alive")
 	ctx.SetStatusCode(fasthttp.StatusOK)
-	ctx.Write(jsonData)
+	if _, err := ctx.Write(jsonData); err != nil {
+		log.Printf("error writing response: %v", err)
+	}
 }
 
 func b2s(b []byte) string {
