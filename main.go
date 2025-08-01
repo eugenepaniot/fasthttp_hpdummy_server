@@ -16,12 +16,19 @@ import (
 	"github.com/valyala/fasthttp/reuseport"
 )
 
+type usageStruct struct {
+	PromptTokens     int `json:"prompt_tokens,omitempty"`
+	CompletionTokens int `json:"completion_tokens,omitempty"`
+	TotalTokens      int `json:"total_tokens,omitempty"`
+}
+
 type requestJSON struct {
 	URI         string            `json:"uri"`
 	Method      string            `json:"method"`
 	Headers     map[string]string `json:"headers"`
 	ContentType string            `json:"content_type"`
 	Body        string            `json:"body"`
+	Usage       usageStruct       `json:"usage"`
 }
 
 var quiet bool
@@ -84,6 +91,11 @@ func requestToJSON(req *fasthttp.Request) ([]byte, error) {
 		Headers:     headers,
 		ContentType: contentType,
 		Body:        body,
+		Usage: usageStruct{
+			PromptTokens:     1,
+			CompletionTokens: 2,
+			TotalTokens:      3,
+		},
 	}
 	return json.Marshal(reqJSON)
 }
