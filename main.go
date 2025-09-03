@@ -23,6 +23,7 @@ type usageStruct struct {
 }
 
 type requestJSON struct {
+	Myhostname  string            `json:"_myhostname"`
 	URI         string            `json:"uri"`
 	Method      string            `json:"method"`
 	Headers     map[string]string `json:"headers"`
@@ -32,11 +33,18 @@ type requestJSON struct {
 }
 
 var quiet bool
+var myhostname string
 
 func main() {
+	var err error
+
 	flag.BoolVar(&quiet, "quiet", true, "quiet")
 	addr := flag.String("addr", "0.0.0.0:8080", "server listen address")
 	flag.Parse()
+
+	if myhostname, err = os.Hostname(); err != nil {
+		log.Fatalf("error getting hostname: %v", err)
+	}
 
 	// Create a new listener on the given address using port reuse
 	ln, err := reuseport.Listen("tcp4", *addr)
@@ -86,6 +94,7 @@ func requestToJSON(req *fasthttp.Request) ([]byte, error) {
 
 	// Create a requestJSON struct and marshal it to JSON
 	reqJSON := &requestJSON{
+		Myhostname:  myhostname,
 		URI:         uri,
 		Method:      method,
 		Headers:     headers,
