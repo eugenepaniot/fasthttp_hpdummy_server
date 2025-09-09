@@ -19,6 +19,8 @@ import (
 type usageStruct struct {
 	PromptTokens     int `json:"prompt_tokens,omitempty"`
 	CompletionTokens int `json:"completion_tokens,omitempty"`
+	InputTokens      int `json:"input_tokens,omitempty"`
+	OutputTokens     int `json:"output_tokens,omitempty"`
 	TotalTokens      int `json:"total_tokens,omitempty"`
 }
 
@@ -103,7 +105,9 @@ func requestToJSON(req *fasthttp.Request) ([]byte, error) {
 		Usage: usageStruct{
 			PromptTokens:     1,
 			CompletionTokens: 2,
-			TotalTokens:      3,
+			InputTokens:      100,
+			OutputTokens:     200,
+			TotalTokens:      300,
 		},
 	}
 	return json.Marshal(reqJSON)
