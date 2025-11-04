@@ -88,6 +88,7 @@ func main() {
 
 	flag.BoolVar(&quiet, "quiet", true, "quiet")
 	addr := flag.String("addr", "0.0.0.0:8080", "server listen address")
+	pidfile := flag.String("pidfile", "fasthttp_hpdummy_server.pid", "path to PID file")
 	flag.Parse()
 
 	if myhostname, err = os.Hostname(); err != nil {
@@ -106,6 +107,26 @@ func main() {
 		log.Fatalf("error creating listener: %v", err)
 	}
 	defer ln.Close()
+
+	// Write PID file
+	// The PID file contains the process ID and is used for process management
+	// It allows external tools to identify and signal this server instance
+	pid := os.Getpid()
+	pidContent := fmt.Sprintf("%d\n", pid)
+	if err := os.WriteFile(*pidfile, []byte(pidContent), 0644); err != nil {
+		log.Fatalf("error writing PID file: %v", err)
+	}
+	log.Printf("wrote PID %d to %s", pid, *pidfile)
+
+	// Ensure PID file is removed on exit
+	// This cleanup happens regardless of how the program exits (normal or error)
+	defer func() {
+		if err := os.Remove(*pidfile); err != nil {
+			log.Printf("error removing PID file: %v", err)
+		} else {
+			log.Printf("removed PID file: %s", *pidfile)
+		}
+	}()
 
 	// Create a new fasthttp server
 	server := &fasthttp.Server{
