@@ -157,6 +157,12 @@ func main() {
 
 	draining.Store(true)
 
+	// Give idle keepalive connections time to make one more request
+	// and receive Connection: close header before shutdown
+	gracePeriod := 1 * time.Second
+	log.Printf("waiting %v for idle keepalive connections to drain...", gracePeriod)
+	time.Sleep(gracePeriod)
+
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer shutdownCancel()
 
@@ -204,10 +210,6 @@ func requestToJSON(req *fasthttp.Request) ([]byte, error) {
 func requestHandler(ctx *fasthttp.RequestCtx) {
 	jsonData, _ := requestToJSON(&ctx.Request)
 
-	if !quiet {
-		fmt.Println(b2s(jsonData))
-	}
-
 	ctx.SetContentType("application/json")
 	ctx.Response.Header.SetContentLength(len(jsonData))
 
@@ -225,6 +227,10 @@ func requestHandler(ctx *fasthttp.RequestCtx) {
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	if _, err := ctx.Write(jsonData); err != nil {
 		log.Printf("error writing response: %v", err)
+	}
+
+	if !quiet {
+		log.Printf("response: %v", &ctx.Response)
 	}
 }
 
