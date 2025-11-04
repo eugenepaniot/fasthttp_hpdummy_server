@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -38,6 +39,7 @@ type requestJSON struct {
 
 var quiet bool
 var myhostname string
+var draining atomic.Bool // Flag to indicate server is draining (set when SIGTERM received)
 
 var requestJSONPool sync.Pool
 
@@ -151,11 +153,11 @@ func main() {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
 	receivedSig := <-sig
-	log.Printf("received signal: %v, initiating graceful shutdown...", receivedSig)
+	log.Printf("received signal: %v, entering draining mode...", receivedSig)
 
-	// Create a context with timeout for graceful shutdown
-	// This gives the server up to 60 seconds to close all connections gracefully
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	draining.Store(true)
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer shutdownCancel()
 
 	// Log the current state before shutdown
@@ -164,11 +166,6 @@ func main() {
 		log.Printf("gracefully shutting down with %d open connection(s)...", openConns)
 	}
 
-	// Gracefully shutdown the server
-	// This will:
-	// 1. Close all listeners (stop accepting new connections)
-	// 2. Add 'Connection: close' header to responses (due to CloseOnShutdown: true)
-	// 3. Wait for all active connections to finish their requests or until context timeout
 	if err := server.ShutdownWithContext(shutdownCtx); err != nil {
 		if err == context.DeadlineExceeded {
 			log.Printf("shutdown timeout exceeded, forcing close of %d remaining connection(s)", server.GetOpenConnectionsCount())
@@ -213,7 +210,18 @@ func requestHandler(ctx *fasthttp.RequestCtx) {
 
 	ctx.SetContentType("application/json")
 	ctx.Response.Header.SetContentLength(len(jsonData))
-	ctx.Response.Header.Set("Connection", "keep-alive")
+
+	// Check if server is draining (pod received SIGTERM)
+	// If draining, tell client not to reuse this connection (zero-downtime upgrade)
+	if draining.Load() {
+		ctx.Response.Header.Set("Connection", "close")
+		if !quiet {
+			log.Printf("sent Connection: close (draining mode)")
+		}
+	} else {
+		ctx.Response.Header.Set("Connection", "keep-alive")
+	}
+
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	if _, err := ctx.Write(jsonData); err != nil {
 		log.Printf("error writing response: %v", err)
