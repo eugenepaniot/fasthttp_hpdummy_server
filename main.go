@@ -28,13 +28,15 @@ type usageStruct struct {
 }
 
 type requestJSON struct {
-	Myhostname  string            `json:"_myhostname"`
-	URI         string            `json:"uri"`
-	Method      string            `json:"method"`
-	Headers     map[string]string `json:"headers"`
-	ContentType string            `json:"content_type"`
-	Body        string            `json:"body"`
-	Usage       usageStruct       `json:"usage"`
+	Myhostname      string            `json:"_myhostname"`
+	URI             string            `json:"uri"`
+	Method          string            `json:"method"`
+	Headers         map[string]string `json:"headers"`
+	ContentType     string            `json:"content_type"`
+	Body            string            `json:"body"`
+	Usage           usageStruct       `json:"usage"`
+	SourceAddr      string            `json:"source_addr"`      // Client IP:PORT (RemoteAddr)
+	DestinationAddr string            `json:"destination_addr"` // Server IP:PORT (LocalAddr)
 }
 
 var quiet bool
@@ -76,6 +78,8 @@ func releaseRequestJSON(reqJSON *requestJSON) {
 	reqJSON.Method = ""
 	reqJSON.ContentType = ""
 	reqJSON.Body = ""
+	reqJSON.SourceAddr = ""
+	reqJSON.DestinationAddr = ""
 
 	// Clear the map but keep the underlying storage for reuse
 	for k := range reqJSON.Headers {
@@ -185,17 +189,22 @@ func main() {
 	log.Printf("server stopped. bye bye!")
 }
 
-func requestToJSON(req *fasthttp.Request) ([]byte, error) {
+func requestToJSON(ctx *fasthttp.RequestCtx) ([]byte, error) {
 	// Acquire a requestJSON object from the pool
 	// Myhostname and Usage fields are already set to constant values in the pool
 	reqJSON := acquireRequestJSON()
 	defer releaseRequestJSON(reqJSON)
+
+	req := &ctx.Request
 
 	// Populate the requestJSON struct with request-specific data only
 	reqJSON.URI = b2s(req.URI().FullURI())
 	reqJSON.Method = b2s(req.Header.Method())
 	reqJSON.ContentType = string(req.Header.ContentType())
 	reqJSON.Body = string(req.Body())
+
+	reqJSON.SourceAddr = ctx.RemoteAddr().String()     // Client IP:PORT
+	reqJSON.DestinationAddr = ctx.LocalAddr().String() // Server IP:PORT
 
 	// Populate headers map (reusing the existing map from pool)
 	for k, v := range req.Header.All() {
@@ -208,7 +217,7 @@ func requestToJSON(req *fasthttp.Request) ([]byte, error) {
 }
 
 func requestHandler(ctx *fasthttp.RequestCtx) {
-	jsonData, _ := requestToJSON(&ctx.Request)
+	jsonData, _ := requestToJSON(ctx)
 
 	ctx.SetContentType("application/json")
 	ctx.Response.Header.SetContentLength(len(jsonData))
