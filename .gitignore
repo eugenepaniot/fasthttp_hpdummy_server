@@ -16,3 +16,4 @@
 
 fasthttp_hpdummy_server
 bin/
+pprof/
