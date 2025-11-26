@@ -172,8 +172,6 @@ func NewServer(bufferSize int) *fasthttp.Server {
 	return &fasthttp.Server{
 		// Connection settings
 		TCPKeepalive: true,
-		ReadTimeout:  90 * time.Second,
-		WriteTimeout: 90 * time.Second, // Increased for large responses
 		IdleTimeout:  10 * time.Second,
 
 		// Performance tuning
