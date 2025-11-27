@@ -32,7 +32,7 @@ import (
 
 	// Automatically set GOMAXPROCS to match container CPU quota
 	// Critical for consistent performance in Kubernetes/containerized environments
-	_ "go.uber.org/automaxprocs"
+	//_ "go.uber.org/automaxprocs"
 )
 
 // init runs before main() and sets up the hostname
