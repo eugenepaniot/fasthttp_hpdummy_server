@@ -92,7 +92,7 @@ func (r *Router) Handler(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	if bytes.Equal(path, pathWS) {
+	if bytes.HasPrefix(path, pathWS) {
 		websocket.Handler(ctx)
 		return
 	}

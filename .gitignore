@@ -14,6 +14,7 @@
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
+fasthttp_hpdummy_server.pid
 fasthttp_hpdummy_server
 bin/
 pprof/

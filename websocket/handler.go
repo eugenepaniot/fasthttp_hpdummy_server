@@ -19,7 +19,7 @@ var upgrader = websocket.FastHTTPUpgrader{
 
 // Description returns the endpoint description for startup logging
 func Description() string {
-	return "  - /ws         -> WebSocket echo server"
+	return "  - /ws         -> WebSocket echo server\n  - /ws/close   -> WebSocket server-initiated close test"
 }
 
 // Handler handles WebSocket echo connections
@@ -30,12 +30,60 @@ func Handler(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	path := string(ctx.Path())
+
+	// Route to appropriate WebSocket handler
+	if path == "/ws/close" {
+		err := upgrader.Upgrade(ctx, handleServerCloseConnection)
+		if err != nil {
+			log.Printf("[WS] upgrade error: %v", err)
+			ctx.SetStatusCode(fasthttp.StatusBadRequest)
+			ctx.SetBodyString("Not a websocket handshake\n")
+		}
+		return
+	}
+
+	// Default to echo handler for /ws and any other /ws/* paths
 	err := upgrader.Upgrade(ctx, handleConnection)
 	if err != nil {
 		log.Printf("[WS] upgrade error: %v", err)
 		ctx.SetStatusCode(fasthttp.StatusBadRequest)
 		ctx.SetBodyString("Not a websocket handshake\n")
 	}
+}
+
+// handleServerCloseConnection sends a test message then initiates close
+func handleServerCloseConnection(conn *websocket.Conn) {
+	defer conn.Close()
+
+	remoteAddr := conn.RemoteAddr().String()
+	logConnection("connected (server-close mode)", remoteAddr)
+
+	// Read client's message
+	messageType, message, err := conn.ReadMessage()
+	if err != nil {
+		handleReadError(err)
+		return
+	}
+
+	logMessage("recv", len(message), remoteAddr)
+
+	// Send response
+	response := "Server received: " + string(message)
+	if err := conn.WriteMessage(messageType, []byte(response)); err != nil {
+		log.Printf("[WS] write error: %v", err)
+		return
+	}
+
+	logMessage("sent", len(response), remoteAddr)
+
+	// Initiate graceful close with 1000 (normal closure)
+	closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "server done")
+	if err := conn.WriteMessage(websocket.CloseMessage, closeMsg); err != nil {
+		log.Printf("[WS] close error: %v", err)
+	}
+
+	logConnection("server-initiated close", remoteAddr)
 }
 
 // handleConnection manages a single WebSocket connection
@@ -82,13 +130,13 @@ func shouldClose(conn *websocket.Conn, remoteAddr string) bool {
 }
 
 // handleReadError logs unexpected read errors.
-// Expected close codes (not logged):
-// - 1000 CloseNormalClosure: client/gateway initiated graceful close
-// - 1001 CloseGoingAway: server shutting down or browser navigating away
+// Only CloseNormalClosure (1000) is expected - all other codes indicate issues:
+// - 1001 CloseGoingAway: server/gateway shutting down (expected during deploys)
+// - 1006 CloseAbnormalClosure: TCP closed without close frame (indicates bug)
+// - 1011 CloseInternalServerErr: gateway/agent error (indicates bug)
 func handleReadError(err error) {
 	if websocket.IsUnexpectedCloseError(err,
 		websocket.CloseNormalClosure,
-		websocket.CloseGoingAway,
 	) {
 		log.Printf("[WS] read error: %v", err)
 	}
