@@ -85,8 +85,6 @@ func shouldClose(conn *websocket.Conn, remoteAddr string) bool {
 // Expected close codes (not logged):
 // - 1000 CloseNormalClosure: client/gateway initiated graceful close
 // - 1001 CloseGoingAway: server shutting down or browser navigating away
-// - 1006 CloseAbnormalClosure: connection dropped without close frame
-// - 1011 CloseInternalServerErr: upstream error (e.g., gateway canceled stream)
 func handleReadError(err error) {
 	if websocket.IsUnexpectedCloseError(err,
 		websocket.CloseNormalClosure,
