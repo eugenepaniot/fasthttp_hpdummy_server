@@ -11,6 +11,8 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 )
 
@@ -69,9 +71,10 @@ func Description() string {
 
 // Server represents a standalone gRPC server
 type Server struct {
-	addr       string
-	grpcServer *grpc.Server
-	listener   net.Listener
+	addr         string
+	grpcServer   *grpc.Server
+	listener     net.Listener
+	healthServer *health.Server
 }
 
 // NewServer creates a new gRPC server instance
@@ -96,7 +99,13 @@ func (s *Server) Start() error {
 		grpc.StreamInterceptor(logStreamInterceptor),
 	)
 
+	// Register Echo service
 	pb.RegisterEchoServiceServer(s.grpcServer, &echoServer{})
+
+	// Register health service
+	s.healthServer = health.NewServer()
+	healthpb.RegisterHealthServer(s.grpcServer, s.healthServer)
+	s.healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 
 	go func() {
 		log.Printf("[gRPC] starting on %s", s.addr)
@@ -112,6 +121,11 @@ func (s *Server) Start() error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	if s.grpcServer == nil {
 		return nil
+	}
+
+	// Mark as not serving before shutdown
+	if s.healthServer != nil {
+		s.healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
 	}
 
 	stopped := make(chan struct{})
