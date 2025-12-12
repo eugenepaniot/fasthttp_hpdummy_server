@@ -17,13 +17,28 @@ service EchoService {
 message EchoRequest {
   string message = 1;
   int64 timestamp = 2;
+  
+  // Optional: If non-zero, server returns this gRPC status code as an error.
+  // Similar to HTTP /status/{code} endpoint - allows testing error propagation.
+  // Example: response_code=14 returns codes.Unavailable
+  int32 response_code = 3;
 }
 
-// EchoResponse contains the echoed message with metadata
+// EchoResponse contains the echoed message with full request metadata
+// Similar to HTTP echo handler - returns all request details for verification
 message EchoResponse {
   string message = 1;
   int64 request_timestamp = 2;
   int64 response_timestamp = 3;
   string server_hostname = 4;
+  
+  // Request metadata (gRPC headers) - allows verifying header propagation
+  map<string, string> metadata = 5;
+  
+  // Method name (e.g., "/echo.EchoService/Echo")
+  string method = 6;
+  
+  // Echo back the requested response_code (0 = OK)
+  int32 response_code = 7;
 }
 

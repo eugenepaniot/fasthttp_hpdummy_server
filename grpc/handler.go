@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -157,23 +158,54 @@ type echoServer struct {
 	pb.UnimplementedEchoServiceServer
 }
 
-// newEchoResponse creates a new EchoResponse from a request
-func newEchoResponse(req *pb.EchoRequest) *pb.EchoResponse {
+// extractMetadata extracts gRPC metadata (headers) from context as a map.
+// Similar to HTTP echo handler - returns all request headers for verification.
+func extractMetadata(ctx context.Context) map[string]string {
+	result := make(map[string]string, 16)
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return result
+	}
+	// Flatten metadata - gRPC allows multiple values per key, we take the first
+	for key, values := range md {
+		if len(values) > 0 {
+			result[key] = values[0]
+		}
+	}
+	return result
+}
+
+// newEchoResponse creates a new EchoResponse from a request with full metadata.
+// Similar to HTTP echo handler - returns all request details for verification.
+func newEchoResponse(ctx context.Context, req *pb.EchoRequest, method string) *pb.EchoResponse {
 	return &pb.EchoResponse{
 		Message:           req.Message,
 		RequestTimestamp:  req.Timestamp,
 		ResponseTimestamp: time.Now().UnixNano(),
 		ServerHostname:    common.Myhostname,
+		Metadata:          extractMetadata(ctx),
+		Method:            method,
+		ResponseCode:      req.ResponseCode, // Echo back requested code (0 = OK)
 	}
 }
 
 func (s *echoServer) Echo(ctx context.Context, req *pb.EchoRequest) (*pb.EchoResponse, error) {
 	// Draining check handled by interceptor
-	return newEchoResponse(req), nil
+	resp := newEchoResponse(ctx, req, "/echo.EchoService/Echo")
+
+	// If response_code is set, return both the response AND the gRPC status code.
+	// This allows testing error propagation while still receiving response data.
+	if req.ResponseCode != 0 {
+		code := codes.Code(req.ResponseCode)
+		return resp, status.Errorf(code, "requested error: %s", code.String())
+	}
+
+	return resp, nil
 }
 
 func (s *echoServer) StreamEcho(stream pb.EchoService_StreamEchoServer) error {
 	// Draining check handled by interceptor (at stream start)
+	ctx := stream.Context()
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
@@ -183,7 +215,13 @@ func (s *echoServer) StreamEcho(stream pb.EchoService_StreamEchoServer) error {
 			return err
 		}
 
-		if err := stream.Send(newEchoResponse(req)); err != nil {
+		// If response_code is set, return that gRPC status code as an error.
+		if req.ResponseCode != 0 {
+			code := codes.Code(req.ResponseCode)
+			return status.Errorf(code, "requested error: %s", code.String())
+		}
+
+		if err := stream.Send(newEchoResponse(ctx, req, "/echo.EchoService/StreamEcho")); err != nil {
 			return err
 		}
 	}

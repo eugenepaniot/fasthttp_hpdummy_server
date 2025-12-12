@@ -23,9 +23,13 @@ const (
 
 // EchoRequest contains the message to echo
 type EchoRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Message       string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
-	Timestamp     int64                  `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Message   string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	Timestamp int64                  `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	// Optional: If non-zero, server returns this gRPC status code as an error.
+	// Similar to HTTP /status/{code} endpoint - allows testing error propagation.
+	// Example: response_code=14 returns codes.Unavailable
+	ResponseCode  int32 `protobuf:"varint,3,opt,name=response_code,json=responseCode,proto3" json:"response_code,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -74,15 +78,29 @@ func (x *EchoRequest) GetTimestamp() int64 {
 	return 0
 }
 
-// EchoResponse contains the echoed message with metadata
+func (x *EchoRequest) GetResponseCode() int32 {
+	if x != nil {
+		return x.ResponseCode
+	}
+	return 0
+}
+
+// EchoResponse contains the echoed message with full request metadata
+// Similar to HTTP echo handler - returns all request details for verification
 type EchoResponse struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	Message           string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
 	RequestTimestamp  int64                  `protobuf:"varint,2,opt,name=request_timestamp,json=requestTimestamp,proto3" json:"request_timestamp,omitempty"`
 	ResponseTimestamp int64                  `protobuf:"varint,3,opt,name=response_timestamp,json=responseTimestamp,proto3" json:"response_timestamp,omitempty"`
 	ServerHostname    string                 `protobuf:"bytes,4,opt,name=server_hostname,json=serverHostname,proto3" json:"server_hostname,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Request metadata (gRPC headers) - allows verifying header propagation
+	Metadata map[string]string `protobuf:"bytes,5,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Method name (e.g., "/echo.EchoService/Echo")
+	Method string `protobuf:"bytes,6,opt,name=method,proto3" json:"method,omitempty"`
+	// Echo back the requested response_code (0 = OK)
+	ResponseCode  int32 `protobuf:"varint,7,opt,name=response_code,json=responseCode,proto3" json:"response_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *EchoResponse) Reset() {
@@ -143,19 +161,47 @@ func (x *EchoResponse) GetServerHostname() string {
 	return ""
 }
 
+func (x *EchoResponse) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *EchoResponse) GetMethod() string {
+	if x != nil {
+		return x.Method
+	}
+	return ""
+}
+
+func (x *EchoResponse) GetResponseCode() int32 {
+	if x != nil {
+		return x.ResponseCode
+	}
+	return 0
+}
+
 var File_grpc_proto_echo_proto protoreflect.FileDescriptor
 
 const file_grpc_proto_echo_proto_rawDesc = "" +
 	"\n" +
-	"\x15grpc/proto/echo.proto\x12\x04echo\"E\n" +
+	"\x15grpc/proto/echo.proto\x12\x04echo\"j\n" +
 	"\vEchoRequest\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\x12\x1c\n" +
-	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp\"\xad\x01\n" +
+	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp\x12#\n" +
+	"\rresponse_code\x18\x03 \x01(\x05R\fresponseCode\"\xe5\x02\n" +
 	"\fEchoResponse\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\x12+\n" +
 	"\x11request_timestamp\x18\x02 \x01(\x03R\x10requestTimestamp\x12-\n" +
 	"\x12response_timestamp\x18\x03 \x01(\x03R\x11responseTimestamp\x12'\n" +
-	"\x0fserver_hostname\x18\x04 \x01(\tR\x0eserverHostname2u\n" +
+	"\x0fserver_hostname\x18\x04 \x01(\tR\x0eserverHostname\x12<\n" +
+	"\bmetadata\x18\x05 \x03(\v2 .echo.EchoResponse.MetadataEntryR\bmetadata\x12\x16\n" +
+	"\x06method\x18\x06 \x01(\tR\x06method\x12#\n" +
+	"\rresponse_code\x18\a \x01(\x05R\fresponseCode\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012u\n" +
 	"\vEchoService\x12-\n" +
 	"\x04Echo\x12\x11.echo.EchoRequest\x1a\x12.echo.EchoResponse\x127\n" +
 	"\n" +
@@ -173,21 +219,23 @@ func file_grpc_proto_echo_proto_rawDescGZIP() []byte {
 	return file_grpc_proto_echo_proto_rawDescData
 }
 
-var file_grpc_proto_echo_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_grpc_proto_echo_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_grpc_proto_echo_proto_goTypes = []any{
 	(*EchoRequest)(nil),  // 0: echo.EchoRequest
 	(*EchoResponse)(nil), // 1: echo.EchoResponse
+	nil,                  // 2: echo.EchoResponse.MetadataEntry
 }
 var file_grpc_proto_echo_proto_depIdxs = []int32{
-	0, // 0: echo.EchoService.Echo:input_type -> echo.EchoRequest
-	0, // 1: echo.EchoService.StreamEcho:input_type -> echo.EchoRequest
-	1, // 2: echo.EchoService.Echo:output_type -> echo.EchoResponse
-	1, // 3: echo.EchoService.StreamEcho:output_type -> echo.EchoResponse
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	2, // 0: echo.EchoResponse.metadata:type_name -> echo.EchoResponse.MetadataEntry
+	0, // 1: echo.EchoService.Echo:input_type -> echo.EchoRequest
+	0, // 2: echo.EchoService.StreamEcho:input_type -> echo.EchoRequest
+	1, // 3: echo.EchoService.Echo:output_type -> echo.EchoResponse
+	1, // 4: echo.EchoService.StreamEcho:output_type -> echo.EchoResponse
+	3, // [3:5] is the sub-list for method output_type
+	1, // [1:3] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_grpc_proto_echo_proto_init() }
@@ -201,7 +249,7 @@ func file_grpc_proto_echo_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_grpc_proto_echo_proto_rawDesc), len(file_grpc_proto_echo_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
