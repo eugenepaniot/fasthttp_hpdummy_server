@@ -8,9 +8,14 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
+const (
+	// MaxMessageSize is the maximum WebSocket message size (16 MiB)
+	MaxMessageSize = 16 << 20
+)
+
 var upgrader = websocket.FastHTTPUpgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
+	ReadBufferSize:  64 * 1024, // 64KB I/O buffer for better large message performance
+	WriteBufferSize: 64 * 1024,
 	CheckOrigin: func(ctx *fasthttp.RequestCtx) bool {
 		// Allow all origins
 		return true
@@ -55,6 +60,7 @@ func Handler(ctx *fasthttp.RequestCtx) {
 // handleServerCloseConnection sends a test message then initiates close
 func handleServerCloseConnection(conn *websocket.Conn) {
 	defer conn.Close()
+	conn.SetReadLimit(MaxMessageSize)
 
 	remoteAddr := conn.RemoteAddr().String()
 	logConnection("connected (server-close mode)", remoteAddr)
@@ -89,6 +95,7 @@ func handleServerCloseConnection(conn *websocket.Conn) {
 // handleConnection manages a single WebSocket connection
 func handleConnection(conn *websocket.Conn) {
 	defer conn.Close()
+	conn.SetReadLimit(MaxMessageSize)
 
 	remoteAddr := conn.RemoteAddr().String()
 	logConnection("connected", remoteAddr)
