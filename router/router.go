@@ -7,6 +7,7 @@ import (
 	"fasthttp_hpdummy_server/common"
 	"fasthttp_hpdummy_server/delay"
 	"fasthttp_hpdummy_server/echo"
+	"fasthttp_hpdummy_server/nousage"
 	"fasthttp_hpdummy_server/status"
 	"fasthttp_hpdummy_server/upload"
 	"fasthttp_hpdummy_server/websocket"
@@ -22,6 +23,7 @@ var (
 	pathDelayPfx   = []byte("/delay/")
 	pathStatusPfx  = []byte("/status/")
 	pathChunkedPfx = []byte("/chunked/")
+	pathNoUsagePfx = []byte("/nousage")
 	pathWS         = []byte("/ws")
 	pathUpload     = []byte("/upload")
 	pathHealth     = []byte("/health")
@@ -49,6 +51,7 @@ func (r *Router) buildHelpResponse() {
 		binary.Description() + "\n" +
 		chunked.Description() + "\n" +
 		delay.Description() + "\n" +
+		nousage.Description() + "\n" +
 		status.Description() + "\n" +
 		upload.Description() + "\n" +
 		websocket.Description())
@@ -84,6 +87,11 @@ func (r *Router) Handler(ctx *fasthttp.RequestCtx) {
 
 	if bytes.HasPrefix(path, pathStatusPfx) {
 		status.Handler(ctx)
+		return
+	}
+
+	if bytes.HasPrefix(path, pathNoUsagePfx) {
+		nousage.Handler(ctx)
 		return
 	}
 
