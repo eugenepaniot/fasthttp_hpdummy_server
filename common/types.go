@@ -18,8 +18,9 @@ type RequestJSON struct {
 	Method          string            `json:"method"`
 	Headers         map[string]string `json:"headers"`
 	ContentType     string            `json:"content_type"`
-	Body            string            `json:"body"`      // Zero-copy via B2s, safe since we marshal immediately
-	BodySize        int64             `json:"body_size"` // Size of body in bytes
+	Body            string            `json:"body"`                     // Request body (truncated if > MaxResponseBodySize)
+	BodySize        int64             `json:"body_size"`                // Actual full size of request body in bytes
+	BodyTruncated   bool              `json:"body_truncated,omitempty"` // True if body was truncated in response
 	Usage           UsageStruct       `json:"usage"`
 	SourceAddr      string            `json:"source_addr"`      // Client IP:PORT (RemoteAddr)
 	DestinationAddr string            `json:"destination_addr"` // Server IP:PORT (LocalAddr)
