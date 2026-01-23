@@ -1,8 +1,10 @@
 package common
 
 import (
+	"io"
 	"sync"
 
+	"github.com/valyala/bytebufferpool"
 	"github.com/valyala/fasthttp"
 )
 
@@ -53,8 +55,8 @@ func ClearRequestJSON(reqJSON *RequestJSON) {
 const (
 	// MaxResponseBodySize limits the body echoed back in responses to prevent
 	// memory issues when receiving large request bodies.
-	// The full body is still received and BodySize reflects the actual size,
-	// but only the first MaxResponseBodySize bytes are included in the response.
+	// Only the first MaxResponseBodySize bytes are read into memory.
+	// The rest is discarded while counting total bytes received.
 	MaxResponseBodySize = 1 * 1024 * 1024 // 1MB
 )
 
@@ -62,9 +64,10 @@ const (
 // This is a shared helper to avoid code duplication across handlers
 // The caller is responsible for acquiring and releasing the RequestJSON object
 //
-// Note: The Body field is truncated to MaxResponseBodySize (1MB) to prevent
-// memory issues when echoing large request bodies back in responses.
-// BodySize always reflects the actual full request body size.
+// IMPORTANT: This function uses streaming to handle large request bodies efficiently.
+// Only the first MaxResponseBodySize (1MB) bytes are kept in memory.
+// The remaining bytes are read and discarded while counting total size.
+// This prevents OOM when receiving multi-hundred-MB request bodies.
 func PopulateRequestJSON(ctx *fasthttp.RequestCtx, reqJSON *RequestJSON) {
 	req := &ctx.Request
 
@@ -72,18 +75,67 @@ func PopulateRequestJSON(ctx *fasthttp.RequestCtx, reqJSON *RequestJSON) {
 	reqJSON.Method = B2s(req.Header.Method())
 	reqJSON.ContentType = B2s(req.Header.ContentType())
 
-	// Get full body and record actual size
-	body := req.Body()
-	reqJSON.BodySize = int64(len(body))
-
-	// Truncate body in response to prevent memory issues with large payloads
-	// Client can check BodySize to see the actual size received
-	if len(body) > MaxResponseBodySize {
-		reqJSON.Body = B2s(body[:MaxResponseBodySize]) + "...[TRUNCATED]"
-		reqJSON.BodyTruncated = true
+	// Stream the body to avoid loading entire payload into memory
+	// Read first MaxResponseBodySize bytes, then discard the rest while counting
+	bodyReader := ctx.RequestBodyStream()
+	if bodyReader == nil {
+		// No streaming body - fallback to regular body (small requests)
+		body := req.Body()
+		reqJSON.BodySize = int64(len(body))
+		if len(body) > MaxResponseBodySize {
+			reqJSON.Body = string(body[:MaxResponseBodySize]) + "...[TRUNCATED]"
+			reqJSON.BodyTruncated = true
+		} else {
+			reqJSON.Body = string(body)
+			reqJSON.BodyTruncated = false
+		}
 	} else {
-		reqJSON.Body = B2s(body)
-		reqJSON.BodyTruncated = false
+		// Streaming body - read first chunk using pooled buffer, discard rest
+		// Use bytebufferpool for efficient buffer management
+		firstBuf := bytebufferpool.Get()
+		defer bytebufferpool.Put(firstBuf)
+
+		// Read up to MaxResponseBodySize bytes
+		firstBuf.B = firstBuf.B[:cap(firstBuf.B)]
+		if cap(firstBuf.B) < MaxResponseBodySize {
+			// Buffer too small, grow it
+			firstBuf.B = make([]byte, MaxResponseBodySize)
+		} else {
+			firstBuf.B = firstBuf.B[:MaxResponseBodySize]
+		}
+
+		n, err := io.ReadFull(bodyReader, firstBuf.B)
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			// Body is smaller than MaxResponseBodySize
+			reqJSON.Body = string(firstBuf.B[:n])
+			reqJSON.BodySize = int64(n)
+			reqJSON.BodyTruncated = false
+		} else if err != nil {
+			// Read error
+			reqJSON.Body = ""
+			reqJSON.BodySize = 0
+			reqJSON.BodyTruncated = false
+		} else {
+			// Body is larger than MaxResponseBodySize
+			// Keep first chunk, discard rest while counting
+			reqJSON.Body = string(firstBuf.B[:n]) + "...[TRUNCATED]"
+			reqJSON.BodyTruncated = true
+
+			// Discard remaining bytes using another pooled buffer
+			discardBuf := bytebufferpool.Get()
+			defer bytebufferpool.Put(discardBuf)
+
+			// Ensure discard buffer has reasonable size (64KB)
+			const discardSize = 64 * 1024
+			if cap(discardBuf.B) < discardSize {
+				discardBuf.B = make([]byte, discardSize)
+			} else {
+				discardBuf.B = discardBuf.B[:discardSize]
+			}
+
+			discarded, _ := io.CopyBuffer(io.Discard, bodyReader, discardBuf.B)
+			reqJSON.BodySize = int64(n) + discarded
+		}
 	}
 
 	reqJSON.SourceAddr = ctx.RemoteAddr().String()
