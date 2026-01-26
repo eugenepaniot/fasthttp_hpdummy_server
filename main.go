@@ -29,7 +29,6 @@ import (
 	// Import pprof for profiling
 	"net/http"
 	_ "net/http/pprof"
-
 	// Automatically set GOMAXPROCS to match container CPU quota
 	// Critical for consistent performance in Kubernetes/containerized environments
 	//_ "go.uber.org/automaxprocs"
